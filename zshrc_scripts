@@ -1,0 +1,94 @@
+function bimg2img() {
+#########################################################################################################################
+	### User Entered Variables ###
+	local stableDiffusionPath=/mnt/e/diffusion/stable-diffusion		# SD Path
+	local promptFile=./imgprompts.txt								# Prompts File (absolute or relative to SD Path)
+	local condaEnvName=ldm2											# Conda ENV name (default ldm)
+	local outPath=outputs/img2img									# Output Path for samples and grid
+	local fontPath=/mnt/e/fonts/FredokaOne-Regular.ttf				# Path to Font to use for labels
+	local IDATE=$(date +"%Y-%m-%dT%H%M%S")							# Date format for folder creation
+	local gridBgCol=black											# Grid Background Color
+	local txtPointsize=15											# Font size for label text (not title)
+	local geometrySettings=+5+3										#Montage geometry settings for borders/label space
+#########################################################################################################################
+	# helper text
+	if [[ $# -eq 0 || "$1" = "--help" ]]; then
+       printf "Runs Stable Diffusion img2img using a prompt file and given image. See source for user variables.\n\nUsage:\n bimg2img '[path/to/img]' [strength 0-1] [seed] [ddim_steps] [num samples per prompt]\n\nExample (defaults)\n bimg2img /imgs/img.png .75 69 100 1\n\nAll arguments optional except for path/to/img"
+       return 1
+	fi
+	cd $stableDiffusionPath
+	# based on num of samples, determine 2,3 or 4 colums for grid
+	local promptlist=("${(@f)$(cat $promptFile)}")
+	promptlen=${#promptlist[@]}
+	((promptlen=promptlen+1))
+	gridcol=4
+	if [ $(( promptlen % 3 )) -eq 0 ];
+	then
+		gridcol=3
+		elif [ $promptlen -eq 4 ];
+		then
+			gridcol=2
+	fi
+	gridrow=$(((promptlen + gridcol - 1) / gridcol))
+    conda activate $condaEnvName
+	python scripts/img2img2.py --seed ${3:-69} --strength ${2:-.75} --ddim_steps ${4:-100} --n_samples ${5:-1} --outdir "$outPath/$IDATE" --init-img $1 --from-file $promptFile
+	cp $1 $outPath/$IDATE/original.png
+	montage -title "img2img - seed: ${3:-69}, strength: ${2:-.75}" -background $gridBgCol $outPath/$IDATE/original.png $outPath/$IDATE/samples/*.png -tile "$gridcol X $gridrow" -font $fontPath -pointsize $txtPointsize -fill white -stroke grey18 -strokewidth 1 -geometry $geometrySettings -set label %t $outPath/$IDATE/fullgrid.png
+}
+function btxt2img(){
+#########################################################################################################################
+	### User Entered Variables ###
+	local stableDiffusionPath=/mnt/e/diffusion/stable-diffusion		# SD Path
+	local promptFile=./prompts.txt									# Prompts File (absolute or relative to SD Path)
+	local condaEnvName=ldm2											# Conda ENV name (default ldm)
+	local outPath=outputs/txt2img									# Output Path for samples and grid
+	local fontPath=/mnt/e/fonts/FredokaOne-Regular.ttf				# Path to Font to use for labels
+	local IDATE=$(date +"%Y-%m-%dT%H%M%S")							# Date format for folder creation
+	local gridBgCol=black											# Grid Background Color
+	local txtPointsize=35											# Font size for label text (not title)
+	local geometrySettings=+3+15									#Montage geometry settings for borders/label space
+#########################################################################################################################
+	# help usage text
+	if [ "$1" = "--help" ]; then
+		printf "Run Stable Diffusion txt2img using a prompt file and generates a labeled grid of all samples. See source for user variables.\n\nUsage:\n btxt2img [number iterations per prompt] [seed] [ddim steps] [precision]\n\nExample(defaults)\n btxt2img 4 42 100 full\n\nAll arguments are optional."
+		return 1
+	fi
+	cd $stableDiffusionPath
+	local promptlist=("${(@f)$(cat $promptFile)}")
+	promptlen=${#promptlist[@]}
+	promptlen=$(( promptlen * ${1:-4} ))
+	gridcol=4
+	# determine grid col length -- not used currently with new montage labeling
+	if [ $(( promptlen % 3 )) -eq 0 ];
+	then
+		gridcol=3
+		elif [ $promptlen -eq 4 ];
+		then
+			gridcol=2
+	fi
+	gridrow=$(((promptlen + gridcol - 1) / gridcol))
+	# sample images
+	conda activate $condaEnvName
+	python scripts/txt2img2.py --seed ${2:-42} --ddim_steps ${3:-100} --precision ${4:-"autocast"} --n_iter ${1:-4} --from-file $promptFile --plms --outdir $outPath/$IDATE
+	# montage each prompt of images together into a strip
+	mkdir $outPath/$IDATE/grids
+	montage -geometry +0+0 -background none $outPath/$IDATE/samples/*.png -tile "${1:-4}X1" -font $fontPath -set label '' $outPath/$IDATE/grids/grid.png 
+	labels=()
+	labelcounter=0
+	# build a list of unique labels from output filenames
+	for file in $outPath/$IDATE/samples/*; do
+		if [[ $labelcounter -eq 0 || $(( labelcounter % ${1:-4} )) -eq 0 ]];
+		then 
+			labeltext=$(echo $file:t | fold -w 150)
+			labels+=($labeltext)
+		fi
+		labelcounter=$(( labelcounter + 1 ))
+	done
+	# Apply label to strips
+	for file in $outPath/$IDATE/grids/*; do
+		convert -label ${labels[1]%-*} $file $file
+		shift labels
+	done
+	# montage montages together into final grid and remove strips
+	montage -title "txt2img - Seed: ${2:-42} DDIM#: ${3:-100}" -background $gridBgCol $outPath/$IDATE/grids/*.png -tile "1 X ${#promptlist[@]}" -font $fontPath -pointsize $txtPointsize -fill white -stroke grey18 -strokewidth 1 -geometry $geometrySettings $outPath/$IDATE/fullgrid.png && rm -rf $outPath/$IDATE/grids
+}
