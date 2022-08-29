@@ -16,3 +16,7 @@ When you’re ready to generate, run `btxt2img` or `bimg2img /path/to/img`.
 The samples (and original file for `bimg2img`) will be saved to its own timestamped directory in the output folder. The new grid will be saved to the same directory as `fullgrid.png` 
 
 For help changing parameters, check the `~/.zshrc` file or run either command with the `--help` argument.
+
+![](https://reticulated.net/dailyai/stable-diffusion-better-grids-and-bulk-scripts/img/image-20220828170357128.png#center)
+
+See more examples here: https://reticulated.net/dailyai/stable-diffusion-better-grids-and-bulk-scripts/
